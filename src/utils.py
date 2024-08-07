@@ -1,15 +1,11 @@
 import torch
 from torch.utils.data import DataLoader
-import torchvision.datasets as datasets
-import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from PIL import Image
-import torchvision
-from dataset import FERDataset
-import datetime
+from torchvision import transforms, datasets
+from sklearn.model_selection import train_test_split
+from dataset import BrainTumourDataset
 import os
+import matplotlib.pyplot as plt
+import datetime
 
 
 def blurt(accuracy: float, loss: float):
@@ -19,62 +15,108 @@ def blurt(accuracy: float, loss: float):
     )
 
 
-# Define a function to load image data
-def LoadImageData(root: str):
-    """
-    Load image data from the specified root directory and return training and test DataLoaders.
+def calculate_mean_std(dataset, batch_size: int, device: torch.device):
+    # Create a data loader
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    Parameters:
-        root (str): The root directory where the training and test datasets are located.
+    mean = torch.zeros(3, device=device)
+    std = torch.zeros(3, device=device)
+    total_images = 0
 
-    Returns:
-        train_dataloader (DataLoader): The DataLoader for the training dataset with a batch size of 64 and shuffling enabled.
-        test_dataloader (DataLoader): The DataLoader for the test dataset with a batch size of 64 and shuffling enabled.
+    for images, _ in data_loader:
+        images = images.to(device)
+        images = images.view(images.size(0), images.size(1), -1)
+        mean += images.mean(2).sum(0)
+        std += images.std(2).sum(0)
+        total_images += images.size(0)
+
+    mean /= total_images
+    std /= total_images
+
+    return mean, std
+
+
+def LoadImageData(root: str, batch_size: int):
+    """Function to process and load our data \n\n
+    Returns the test and train dataloaders\n\n
+    Each 'class' must have a subfolder inside the root, "data" folder. So data/NoTumour & data/HasTumour
     """
-    # Define transformations
+    # ImageFolder dataset containing paths and labels of images.
+    dataset = datasets.ImageFolder(root)
+
+    mean, std = calculate_mean_std(
+        (
+            BrainTumourDataset(
+                dataset.imgs,
+                transform=transforms.Compose(
+                    [
+                        transforms.Resize((224, 224)),
+                        transforms.ToTensor(),
+                    ]
+                ),
+            )
+        ),
+        batch_size=4,
+        device="mps",
+    )
+
+    # The transforms for our dataset
     transform = transforms.Compose(
         [
-            transforms.Resize((48, 48)),
-            transforms.RandomHorizontalFlip(),  # Randomly flip images horizontally
-            transforms.ToTensor(),  # Convert images to PyTorch tensors
+            # transforms.RandomHorizontalFlip(),
+            # transforms.RandomVerticalFlip(),
+            # transforms.RandomRotation(10),
+            # transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
+            transforms.Resize((224, 224)),
+            # transforms.ColorJitter(
+            #     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2
+            # ),
+            # transforms.RandomGrayscale(p=0.1),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=mean, std=std),
         ]
     )
 
-    # Initialize custom datasets
-    train_dataset = FERDataset(root + "/train", transform=transform)
-    test_dataset = FERDataset(root + "/test", transform=transform)
+    # Split our data into train and test data and labels
+    train_data, test_data, train_labels, test_labels = train_test_split(
+        dataset.imgs, dataset.targets, test_size=0.2, random_state=42
+    )
 
-    # Create DataLoaders
-    train_dataloader = DataLoader(dataset=train_dataset, batch_size=64, shuffle=True)
-    test_dataloader = DataLoader(dataset=test_dataset, batch_size=64, shuffle=False)
+    train_dataset = BrainTumourDataset(train_data, transform)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+
+    test_dataset = BrainTumourDataset(test_data, transform)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     return train_dataloader, test_dataloader
 
 
-def matplotlib_imshow(batch, num_images):
-    """Function for producing an inline display of a set number of images in a given batch"""
-    classes = (
-        "Angry",
-        "Disgust",
-        "Fear",
-        "Happy",
-        "Sad",
-        "Surprise",
-        "Neutral",
-    )
+def matplotlib_imshow(batch: list, num_images: int):
+    """Function for producing an inline display
+    of a set number of images in a given batch"""
 
-    images, labels = batch
-    images = images[:num_images]
-    labels = labels[:num_images]
+    classes = ("Healthy", "Tumor")
 
-    fig, axes = plt.subplots(1, len(images), figsize=(10, 5))
-    for idx, img in enumerate(images):
+    # Fetch only the first (num_images)th
+    batch = [(batch[0][0:num_images]), batch[1][0:num_images]]
+
+    fig, axes = plt.subplots(1, len(batch[0]), figsize=(10, 5))
+    for idx, img in enumerate(batch[0]):
+        # Assuming img is normalized with mean and std
+        # Adjust this based on your normalization specifics
+        imgu = img.permute(1, 2, 0).cpu().numpy()
+
+        # Unnormalize if needed (modify these values based on your normalization)
+        # Example: if your images are normalized with mean and std
+        # imgu = imgu * std + mean
+        # This example assumes mean=0 and std=1 for simplicity
+
+        # Clip image values to [0, 1] if they're normalized floats
+        imgu = (imgu - imgu.min()) / (imgu.max() - imgu.min())
+
         ax = axes[idx]
-        actual_label = torch.argmax(labels[idx]).item()
-        ax.set_title(classes[actual_label])
-        ax.imshow(img.permute(1, 2, 0))
-
-        print(f"Image {idx + 1} - Actual Label: {classes[actual_label]}")
+        ax.set_title(classes[batch[1][idx].type(torch.int64)])
+        ax.imshow(imgu)
 
     plt.tight_layout()
     plt.show()
@@ -94,10 +136,12 @@ def visualise_batch_images(batch_num: int, dataloader: DataLoader, num_images: i
 def train_model(
     model: torch.nn.Module,
     criterion,
-    optimiser,
+    optimizer,
     dataloader: DataLoader,
     val_dataloader: DataLoader,
     epochs: int,
+    device: torch.device,
+    scheduler,
 ):
     """A function to train our model and evaluate it after each epoch.
 
@@ -116,10 +160,10 @@ def train_model(
         num_train_batches = len(dataloader)
 
         for idx, batch in enumerate(dataloader):
-            imgs, labels = batch[0], batch[1]
+            imgs, labels = batch[0].to(device), batch[1].to(device)
 
             # Zero gradients
-            optimiser.zero_grad()
+            optimizer.zero_grad()
 
             # Forward pass
             predictions = model(imgs).squeeze()
@@ -129,11 +173,11 @@ def train_model(
 
             # Back propagation and update parameters
             loss.backward()
-            optimiser.step()
+            optimizer.step()
 
             running_train_loss += loss.item()
 
-            if idx % 100 == 0:
+            if idx % 10 == 0:
                 print(f"Loss: {loss:.3f} | Batch: {idx}/{len(dataloader)}")
 
         average_train_loss = running_train_loss / num_train_batches
@@ -147,7 +191,7 @@ def train_model(
 
         with torch.no_grad():
             for val_batch in val_dataloader:
-                val_imgs, val_labels = val_batch[0], val_batch[1]
+                val_imgs, val_labels = val_batch[0].to(device), val_batch[1].to(device)
 
                 # Forward pass
                 val_predictions = model(val_imgs).squeeze()
@@ -159,6 +203,13 @@ def train_model(
         average_val_loss = running_val_loss / num_val_batches
         val_losses.append(average_val_loss)
         print(f"Average Validation Loss for Epoch {epoch}: {average_val_loss:.3f}")
+
+        # Step the scheduler with the validation loss
+        scheduler.step(average_val_loss)
+        print(f"Learning Rate after Epoch {epoch}: {scheduler.get_last_lr()[0]}")
+
+        # Save the model after each epoch
+        save_model(model, f"../models/TV-Epoch-{epoch+1}.pt")
 
         # Switch back to training mode
         model.train()
@@ -182,24 +233,35 @@ def train_model(
     plt.show()
 
 
-def test_model(model: torch.nn.Module, criterion, dataloader: DataLoader):
-    """Function to evaluate our model's performance after training \n\n
-    Having it iterate over data it has never seen before"""
+def test_model(
+    model: torch.nn.Module, criterion, dataloader: DataLoader, device: torch.device
+):
+    """Function to evaluate our model's performance after training.
 
+    It iterates over data it has never seen before.
+    """
     start = datetime.datetime.now()
     model.eval()
     test_loss = 0
     correct = 0
-
     with torch.no_grad():
         for images, labels in dataloader:
+
+            images, labels = images.to(device), labels.to(device)
             output = model(images)
-            test_loss += criterion(output.squeeze(), labels)
+            loss = criterion(output.squeeze(), labels.float())
 
-            if torch.argmax(output) == torch.argmax(labels):
-                correct += 1
+            test_loss += loss.item()
+            predicted = torch.round(
+                torch.sigmoid(output.squeeze())
+            )  # Convert output to probabilities and then to binary
+            # Traverse through each prediction and compare with label
+            for i in range(len(predicted)):
 
-    accuracy = correct / len(dataloader)
+                if predicted[i] == labels[i]:
+                    correct += 1
+
+    accuracy = correct / len(dataloader.dataset)
     avg_loss = test_loss / len(dataloader)
 
     end = datetime.datetime.now()
@@ -209,7 +271,7 @@ def test_model(model: torch.nn.Module, criterion, dataloader: DataLoader):
     print(f"Run time: {run_time}")
 
     print(
-        f"Accuracy: {correct}/{ len(dataloader)}  | {100*accuracy:.2f} %  | Average Loss: {avg_loss:.3f}"
+        f"Accuracy: {correct}/{len(dataloader.dataset)}  | {100*accuracy:.2f}%  | Average Loss: {avg_loss:.3f}"
     )
     blurt(accuracy, loss=avg_loss)
 

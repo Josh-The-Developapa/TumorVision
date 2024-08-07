@@ -1,49 +1,56 @@
-import os
 import torch
-from torch.utils.data import Dataset
-from torchvision import transforms
 from PIL import Image
+from torch.utils.data import Dataset
+import torch.nn.functional as F
 
 
-class FERDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.root_dir = root_dir
+class BrainTumourDataset(Dataset):
+    """
+    Custom dataset for 224x224 MRI scans of human brains for multi-class classification.
+    This dataset is designed for use with a PyTorch DataLoader.
+
+    Labels:
+    0 - Healthy
+    1 - Tumor
+    """
+
+    def __init__(self, dataset, transform):
+        """
+        Initialize the dataset with image-label pairs and transformation operations.
+
+        Args:
+            dataset (list of tuples): List containing tuples of image file paths and their corresponding labels.
+            transform (callable): Transform to be applied on an image sample.
+        """
+        self.dataset = dataset
         self.transform = transform
 
-        # Define your classes (assuming FER-13 classes)
-        self.classes = (
-            "Angry",
-            "Disgust",
-            "Fear",
-            "Happy",
-            "Sad",
-            "Surprise",
-            "Neutral",
-        )
-
-        self.data = self.load_dataset()
-
-    def load_dataset(self):
-        data = []
-        for class_idx, class_name in enumerate(self.classes):
-            class_dir = os.path.join(self.root_dir, class_name)
-            for img_name in os.listdir(class_dir):
-                img_path = os.path.join(class_dir, img_name)
-                data.append((img_path, class_idx))
-        return data
-
     def __len__(self):
-        return len(self.data)
+        """
+        Returns the total number of samples in the dataset.
 
-    def __getitem__(self, idx):
-        img_path, label_index = self.data[idx]
-        image = Image.open(img_path).convert("RGB")
+        Returns:
+            int: Total number of samples.
+        """
+        return len(self.dataset)
 
-        if self.transform:
-            image = self.transform(image)
+    def __getitem__(self, index):
+        """
+        Retrieve an image and its corresponding label at a specified index.
 
-        # One-hot encode the label
-        label = torch.zeros(len(self.classes), dtype=torch.float)
-        label[label_index] = 1.0
+        Args:
+            index (int): Index of the sample to be retrieved.
+
+        Returns:
+            tuple: (transformed image tensor, label tensor)
+        """
+        # Convert the file path to a PIL image and ensure it's in RGB format.
+        imagePIL = Image.open(self.dataset[index][0]).convert("RGB")
+
+        # Apply the specified transformations to the image (e.g., resize, normalize, etc.).
+        image = self.transform(imagePIL)
+
+        # Convert the label to a tensor of type float32.
+        label = torch.tensor(self.dataset[index][1]).type(torch.float32)
 
         return image, label
