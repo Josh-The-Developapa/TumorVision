@@ -7,13 +7,13 @@ from utils import (
     test_model,
     load_model,
 )
-from model import TVG1
-
-# Set the device to 'mps' if available (for Macbooks with Apple Silicon), else 'cpu'
-device = "mps" if torch.backends.mps.is_available() else "cpu"
+from model import TVRN50
 
 # Set the device to 'cuda' if available (for Nvidia GPUs running CUDA), else 'cpu'
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Set the device to 'mps' if available (for Macbooks with Apple Silicon), else 'cpu'
+device = "mps" if torch.backends.mps.is_available() else "cpu"
 
 # Load the training and testing data using LoadImageData function
 train_dataloader, test_dataloader = LoadImageData(
@@ -24,15 +24,16 @@ train_dataloader, test_dataloader = LoadImageData(
 # Visualise a batch of images from the Brain Tumor dataset
 visualise_batch_images(2, train_dataloader, 4)
 
-# Define a new instance of the TVG1 model and move it to the appropriate device
-model = TVG1().to(device=device)
+# Define a new instance of the TVRN50 model and move it to the appropriate device
+model = TVRN50().to(device=device)
 
 # Optionally, load a pre-trained model from a file
-model = load_model(model_class=TVG1, file="../models/TVG1.pt").to(device=device)
+model = load_model(model_class=TVRN50, file="../models/TVRN50.pt").to(device=device)
 
 # Calculate and print the total number of parameters in the model
 total_params = sum(p.numel() for p in model.parameters())
-print(f"Total parameters: {total_params}")
+print("TumorVision ResNet50 (TVRN50)")
+print(f"Total parameters: {total_params:,} parameters")
 
 # Define the loss function (criterion) as Binary Cross Entropy with Logits
 criterion = nn.BCEWithLogitsLoss().to(device=device)
@@ -46,7 +47,7 @@ scheduler = optim.lr_scheduler.ReduceLROnPlateau(
 )
 
 # Test the model before training to get the initial performance
-print("Testing before training")
+# print("Testing before training")
 test_model(model, criterion, test_dataloader, device=device)
 
 # Train the model
@@ -65,6 +66,6 @@ train_model(
 print("Testing after training")
 test_model(model, criterion, test_dataloader, device=device)
 
-# TVG1
+# TVRN50
 # Actual training results to capacity:
 # Accuracy: 47/51  | 92.16%  | Average Loss: 0.474

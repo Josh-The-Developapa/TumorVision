@@ -5,19 +5,19 @@ from torch import nn
 import torch.nn.functional as F
 
 
-class TVG1(nn.Module):
-    """Class for TumourVision G1 (TVG-1), a powerful Convolutional Neural Network (CNN) designed
+class TVRN50(nn.Module):
+    """Class for TumourVision ResNet50 (TVRN50), a powerful Convolutional Neural Network (CNN) designed
     to classify brain MRI scans for brain tumor detection.
     The model is built using PyTorch and leverages Torch, TorchVision, and Matplotlib
     libraries to achieve accurate and insightful results.
 
-    TVG1 has 23.64 million parameters. 23,643,393 parameters to be exact.
+    TVRN50 has 23.64 million parameters. 23,643,393 parameters to be exact.
     """
 
     def __init__(
         self, num_classes=1
     ):  # Set num_classes to 1 (can be updated as needed)
-        super(TVG1, self).__init__()
+        super(TVRN50, self).__init__()
         # Load the pre-trained ResNet50 model from torchvision
         self.resnet50 = models.resnet50(
             weights=torchvision.models.ResNet50_Weights.DEFAULT
@@ -54,4 +54,4 @@ class TVG1(nn.Module):
 
 
 # Example instantiation of the model
-# model = TVG1(num_classes=4)  # Set num_classes to the desired number of output classes
+# model = TVRN50(num_classes=4)  # Set num_classes to the desired number of output classes
